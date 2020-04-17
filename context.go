@@ -60,11 +60,7 @@ func (cg *ContextGroup) NewGroup(path string) *ContextGroup {
 func (cg *ContextGroup) Handle(method, path string, handler http.HandlerFunc) {
 	fullPath := cg.group.path + path
 	cg.group.Handle(method, path, func(w http.ResponseWriter, r *http.Request, params map[string]string) {
-		routeData := &contextData{
-			route:  fullPath,
-			params: params,
-		}
-		r = r.WithContext(AddRouteDataToContext(r.Context(), routeData))
+		r = r.WithContext(AddDataToContext(r.Context(), fullPath, params))
 		handler(w, r)
 	})
 }
@@ -74,11 +70,7 @@ func (cg *ContextGroup) Handle(method, path string, handler http.HandlerFunc) {
 func (cg *ContextGroup) Handler(method, path string, handler http.Handler) {
 	fullPath := cg.group.path + path
 	cg.group.Handle(method, path, func(w http.ResponseWriter, r *http.Request, params map[string]string) {
-		routeData := &contextData{
-			route:  fullPath,
-			params: params,
-		}
-		r = r.WithContext(AddRouteDataToContext(r.Context(), routeData))
+		r = r.WithContext(AddDataToContext(r.Context(), fullPath, params))
 		handler.ServeHTTP(w, r)
 	})
 }
@@ -123,63 +115,51 @@ type contextData struct {
 	params map[string]string
 }
 
-func (cd *contextData) Route() string {
-	return cd.route
-}
-
-func (cd *contextData) Params() map[string]string {
-	if cd.params != nil {
+// ContextParams returns the params map associated with the given context if one exists. Otherwise, an empty map is returned.
+func ContextParams(ctx context.Context) map[string]string {
+	if cd := getContextData(ctx); cd != nil {
 		return cd.params
 	}
 	return map[string]string{}
 }
 
-// ContextRouteData is the information associated with the matched path.
-// Route() returns the matched route, without expanded wildcards.
-// Params() returns a map of the route's wildcards and their matched values.
-type ContextRouteData interface {
-	Route() string
-	Params() map[string]string
-}
-
-// ContextParams returns a map of the route's wildcards and their matched values.
-func ContextParams(ctx context.Context) map[string]string {
-	if cd := ContextData(ctx); cd != nil {
-		return cd.Params()
-	}
-	return map[string]string{}
-}
-
-// ContextRoute returns the matched route, without expanded wildcards.
+// ContextRoute returns the matched route path associated with the given context if one exists
 func ContextRoute(ctx context.Context) string {
-	if cd := ContextData(ctx); cd != nil {
-		return cd.Route()
+	if cd := getContextData(ctx); cd != nil {
+		return cd.route
 	}
 	return ""
 }
 
-// ContextData returns the ContextRouteData associated with the matched path
-func ContextData(ctx context.Context) ContextRouteData {
-	if p, ok := ctx.Value(contextDataKey).(ContextRouteData); ok {
+// ContextData returns the full route path associated with the given context, without wildcard expansion.
+func getContextData(ctx context.Context) *contextData {
+	if p, ok := ctx.Value(contextDataKey).(*contextData); ok {
 		return p
 	}
 	return nil
 }
 
-// AddRouteDataToContext can be used for testing handlers, to insert route data into the request's `Context`.
-func AddRouteDataToContext(ctx context.Context, data ContextRouteData) context.Context {
-	return context.WithValue(ctx, contextDataKey, data)
+// AddDataToContext inserts both the route and params into the same context object
+func AddDataToContext(ctx context.Context, route string, params map[string]string) context.Context {
+	if params == nil {
+		params = map[string]string{}
+	}
+	return context.WithValue(ctx, contextDataKey, &contextData{
+		route: route,
+		params: params,
+	})
 }
 
 // AddParamsToContext inserts a parameters map into a context using
-// the package's internal context key. This function is deprecated.
-// Use AddRouteDataToContext instead.
+// the package's internal context key.
 func AddParamsToContext(ctx context.Context, params map[string]string) context.Context {
-	data := &contextData{
-		route:  "",
-		params: params,
-	}
-	return AddRouteDataToContext(ctx, data)
+	return AddDataToContext(ctx, "", params)
+}
+
+// AddRouteToContext inserts a route into a context using
+// the package's internal context key.
+func AddRouteToContext(ctx context.Context, route string) context.Context {
+	return AddDataToContext(ctx, route, nil)
 }
 
 type contextKey int

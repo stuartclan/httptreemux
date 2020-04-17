@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 )
 
@@ -88,28 +89,21 @@ func TestContextData(t *testing.T) {
 
 	ctx := context.WithValue(context.Background(), contextDataKey, p)
 
-	ctxData := ContextData(ctx)
-	pathValue := ctxData.Route()
+	pathValue := ContextRoute(ctx)
 	if pathValue != p.route {
 		t.Errorf("expected '%s', but got '%s'", p, pathValue)
 	}
 
-	params := ctxData.Params()
+	params := ContextParams(ctx)
 	if v := params["id"]; v != "123" {
 		t.Errorf("expected '%s', but got '%#v'", p.params["id"], params["id"])
 	}
 }
 
 func TestContextDataWithEmptyParams(t *testing.T) {
-	p := &contextData{
-		route:  "route/path",
-		params: nil,
-	}
-
-	ctx := context.WithValue(context.Background(), contextDataKey, p)
-	params := ContextData(ctx).Params()
+	params := ContextParams(context.Background())
 	if params == nil {
-		t.Errorf("ContextData.Params should never return nil")
+		t.Errorf("ContextParams should never return nil")
 	}
 }
 
@@ -138,13 +132,12 @@ func testContextGroupMethods(t *testing.T, reqGen RequestCreator, headCanUseGet 
 					t.Error("missing key 'param' in context from ContextParams")
 				}
 
-				ctxData := ContextData(r.Context())
-				v, ok = ctxData.Params()["param"]
+				v, ok = ContextParams(r.Context())["param"]
 				if hasParam && !ok {
 					t.Error("missing key 'param' in context from ContextData")
 				}
 
-				routePath := ctxData.Route()
+				routePath := ContextRoute(r.Context())
 				if routePath != expectedRoutePath {
 					t.Errorf("Expected context to have route path '%s', saw %s", expectedRoutePath, routePath)
 				}
@@ -361,4 +354,54 @@ func TestContextMuxSimple(t *testing.T) {
 	w = httptest.NewRecorder()
 	t.Log("Testing with DefaultContext")
 	router.ServeHTTP(w, r)
+}
+
+func TestAddDataToContext(t *testing.T) {
+	expectedRoute := "/expected/route"
+	expectedParams := map[string]string{
+		"test": "expected",
+	}
+
+	ctx := AddDataToContext(context.Background(), expectedRoute, expectedParams)
+
+	if gotData, ok := ctx.Value(contextDataKey).(*contextData); ok && gotData != nil {
+		if gotData.route != expectedRoute {
+			t.Errorf("Did not retrieve the desired route. Expected: %s; Got: %s", expectedRoute, gotData.route)
+		}
+		if !reflect.DeepEqual(expectedParams, gotData.params) {
+			t.Errorf("Did not retrieve the desired parameters. Expected: %#v; Got: %#v", expectedParams, gotData.params)
+		}
+	} else {
+		t.Error("failed to retrieve context data")
+	}
+}
+
+func TestAddParamsToContext(t *testing.T) {
+	expectedParams := map[string]string{
+		"test": "expected",
+	}
+
+	ctx := AddParamsToContext(context.Background(), expectedParams)
+
+	if gotData, ok := ctx.Value(contextDataKey).(*contextData); ok && gotData != nil {
+		if !reflect.DeepEqual(expectedParams, gotData.params) {
+			t.Errorf("Did not retrieve the desired parameters. Expected: %#v; Got: %#v", expectedParams, gotData.params)
+		}
+	} else {
+		t.Error("failed to retrieve context data")
+	}
+}
+
+func TestAddRouteToContext(t *testing.T) {
+	expectedRoute := "/expected/route"
+
+	ctx := AddRouteToContext(context.Background(), expectedRoute)
+
+	if gotData, ok := ctx.Value(contextDataKey).(*contextData); ok && gotData != nil {
+		if gotData.route != expectedRoute {
+			t.Errorf("Did not retrieve the desired route. Expected: %s; Got: %s", expectedRoute, gotData.route)
+		}
+	} else {
+		t.Error("failed to retrieve context data")
+	}
 }
